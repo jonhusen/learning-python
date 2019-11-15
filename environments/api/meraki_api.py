@@ -104,13 +104,9 @@ def get_networks(customers_json, headers):
         try:
             response = requests.get(url=net_url, headers=headers)
             networks_json = response.json()
-            network_ids = []  # list of dicts
-            for network in networks_json:
-                network_ids.append({'networkId': network['id'],
-                                    'networkName': network['name']})
             networks_list.append({'organizationId': customer['id'],
                                   'organizationName': customer['name'],
-                                  'networks': network_ids})
+                                  'networks': networks_json})
         except TypeError:
             error = 'To make requests you must first enable API access'
             if networks_json['errors'][0][0:49] == error:
@@ -118,6 +114,37 @@ def get_networks(customers_json, headers):
                                       'organizationName': customer['name'],
                                       'error': error})
     return networks_list
+
+
+def get_network_l3fwrules(networks_json, headers):
+    """Accepts a json list of networks for each organization.
+    Returns a json list of network devices for each network"""
+    for customer in networks_json:
+        if 'networks' in customer:
+            customer_fwrules = []
+            for network in customer['networks']:
+                if network['type'] == 'appliance':
+                    network_l3fwrules_url = Api_url \
+                                            + 'networks/' \
+                                            + network['id'] \
+                                            + '/l3FirewallRules'
+                    fwrules = requests.get(url=network_l3fwrules_url, headers=headers)
+                    customer_fwrules.append({'id': network['id'],
+                                             'name': network['name'],
+                                             'l3FirewallRules': fwrules})
+            customer['l3FirewallRules'] = customer_fwrules
+    networks_fwrules_json = networks_json
+    return networks_fwrules_json
+
+
+def audit_umbrelladns(fwrules, headers):
+    """Accepts a list of firewall rules for a client
+    Checks for rules to allow DNS lookups to Umbrella and
+    deny all other DNS lookups.
+    Returns a list of clients and a boolean of whether Umbrella DNS
+    is configured properly"""
+
+
 
 
 def get_syslog_servers(networks_json, headers):
@@ -130,7 +157,7 @@ def get_syslog_servers(networks_json, headers):
             for network in customer['networks']:
                 syslog_url = Api_url \
                              + 'networks/' \
-                             + network['networkId'] \
+                             + network['id'] \
                              + '/syslogServers'
                 response = requests.get(url=syslog_url, headers=headers)
                 syslog_json = response.json()
@@ -155,13 +182,15 @@ def write_json_to_file(json_output):
 headers = auth_meraki_api()
 customers = get_meraki_customers(headers)
 
-# Get syslog configs for all customers as json file
-networks = get_networks(customers, headers)
-syslog = get_syslog_servers(networks, headers)
-write_json_to_file(syslog)
 
+# # Get syslog configs for all customers as json file
+networks = get_networks(customers, headers)
+# syslog = get_syslog_servers(networks, headers)
+# write_json_to_file(syslog)
+#
+rules = get_network_l3fwrules(networks, headers)
 
 # Get 2fa configuration for admins accounts at each customer
-admins = get_customers_admins(customers, headers)
-audit = parse_admins(admins)
-write_json_to_file(audit)
+# admins = get_customers_admins(customers, headers)
+# audit = parse_admins(admins)
+# write_json_to_file(audit)
