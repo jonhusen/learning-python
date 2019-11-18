@@ -121,30 +121,67 @@ def get_network_l3fwrules(networks_json, headers):
     Returns a json list of network devices for each network"""
     for customer in networks_json:
         if 'networks' in customer:
-            customer_fwrules = []
             for network in customer['networks']:
-                if network['type'] == 'appliance':
+                if isinstance(network, dict) and 'appliance' in network['productTypes']:
                     network_l3fwrules_url = Api_url \
                                             + 'networks/' \
                                             + network['id'] \
                                             + '/l3FirewallRules'
-                    fwrules = requests.get(url=network_l3fwrules_url, headers=headers)
-                    customer_fwrules.append({'id': network['id'],
-                                             'name': network['name'],
-                                             'l3FirewallRules': fwrules})
-            customer['l3FirewallRules'] = customer_fwrules
+                    request = requests.get(url=network_l3fwrules_url, headers=headers)
+                    fwrules = request.json()
+                    network['l3FirewallRules'] = fwrules
     networks_fwrules_json = networks_json
     return networks_fwrules_json
 
 
-def audit_umbrelladns(fwrules, headers):
+def audit_umbrelladns(networks_fwrules):
     """Accepts a list of firewall rules for a client
     Checks for rules to allow DNS lookups to Umbrella and
     deny all other DNS lookups.
     Returns a list of clients and a boolean of whether Umbrella DNS
     is configured properly"""
-
-
+    umbrelladns_audit = []
+    host1 = '208.67.222.222/32'
+    host2 = '208.67.220.220/32'
+    for customer in networks_fwrules:
+        for network in customer['networks']:
+            umbrella_allow, dns_deny = 'False', 'False'
+            if 'l3FirewallRules' in network:
+                for rule in network['l3FirewallRules']:
+                    destcidr = rule['destCidr'].split(",")
+                    if rule['policy'] is 'allow' \
+                            and rule['protocol'] is 'tcp' \
+                            and rule['destPort'] is '53' \
+                            and (host1 in destcidr and host2 in destcidr):
+                        umbrella_allow = 'True'
+                    if rule['policy'] is 'allow' \
+                            and rule['protocol'] is 'udp' \
+                            and rule['destPort'] is '53' \
+                            and (host1 in destcidr and host2 in destcidr):
+                        umbrella_allow = 'True'
+                    if rule['policy'] is 'deny' \
+                            and rule['protocol'] is 'tcp' \
+                            and rule['destPort'] is '53' \
+                            and rule['destCidr'] is 'any':
+                        dns_deny = 'True'
+                    if rule['policy'] is 'deny' \
+                            and rule['protocol'] is 'udp' \
+                            and rule['destPort'] is '53' \
+                            and rule['destCidr'] is 'any':
+                        dns_deny = 'True'
+            if umbrella_allow is 'True' and dns_deny is 'True':
+                umbrelladns_audit.append({
+                    'name': network['name'],
+                    'organizationId': network['organizationId'],
+                    'umbrellaDns': 'True'
+                })
+            else:
+                umbrelladns_audit.append({
+                    'name': network['name'],
+                    'organizationId': network['organizationId'],
+                    'umbrellaDns': 'False'
+                })
+    return umbrelladns_audit
 
 
 def get_syslog_servers(networks_json, headers):
@@ -189,7 +226,7 @@ networks = get_networks(customers, headers)
 # write_json_to_file(syslog)
 #
 rules = get_network_l3fwrules(networks, headers)
-
+write_json_to_file(rules)
 # Get 2fa configuration for admins accounts at each customer
 # admins = get_customers_admins(customers, headers)
 # audit = parse_admins(admins)
