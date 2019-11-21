@@ -144,43 +144,40 @@ def audit_umbrelladns(networks_fwrules):
     host1 = '208.67.222.222/32'
     host2 = '208.67.220.220/32'
     for customer in networks_fwrules:
+        customer_result = {
+            'organizationId': customer['organizationId'],
+            'organizationName': customer['organizationName']
+        }
         for network in customer['networks']:
             umbrella_allow, dns_deny = 'False', 'False'
             if 'l3FirewallRules' in network:
                 for rule in network['l3FirewallRules']:
                     destcidr = rule['destCidr'].split(",")
-                    if rule['policy'] is 'allow' \
-                            and rule['protocol'] is 'tcp' \
-                            and rule['destPort'] is '53' \
+                    if rule['policy'] == 'allow' \
+                            and rule['protocol'] == 'tcp' \
+                            and rule['destPort'] == '53' \
                             and (host1 in destcidr and host2 in destcidr):
                         umbrella_allow = 'True'
-                    if rule['policy'] is 'allow' \
-                            and rule['protocol'] is 'udp' \
-                            and rule['destPort'] is '53' \
+                    if rule['policy'] == 'allow' \
+                            and rule['protocol'] == 'udp' \
+                            and rule['destPort'] == '53' \
                             and (host1 in destcidr and host2 in destcidr):
                         umbrella_allow = 'True'
-                    if rule['policy'] is 'deny' \
-                            and rule['protocol'] is 'tcp' \
-                            and rule['destPort'] is '53' \
-                            and rule['destCidr'] is 'any':
+                    if rule['policy'] == 'deny' \
+                            and rule['protocol'] == 'tcp' \
+                            and rule['destPort'] == '53' \
+                            and rule['destCidr'] == 'Any':
                         dns_deny = 'True'
-                    if rule['policy'] is 'deny' \
-                            and rule['protocol'] is 'udp' \
-                            and rule['destPort'] is '53' \
-                            and rule['destCidr'] is 'any':
+                    if rule['policy'] == 'deny' \
+                            and rule['protocol'] == 'udp' \
+                            and rule['destPort'] == '53' \
+                            and rule['destCidr'] == 'Any':
                         dns_deny = 'True'
             if umbrella_allow is 'True' and dns_deny is 'True':
-                umbrelladns_audit.append({
-                    'name': network['name'],
-                    'organizationId': network['organizationId'],
-                    'umbrellaDns': 'True'
-                })
+                customer_result['umbrellaDns'] = 'True'
             else:
-                umbrelladns_audit.append({
-                    'name': network['name'],
-                    'organizationId': network['organizationId'],
-                    'umbrellaDns': 'False'
-                })
+                customer_result['umbrellaDns'] = 'False'
+        umbrelladns_audit.append(customer_result)
     return umbrelladns_audit
 
 
@@ -190,7 +187,7 @@ def get_syslog_servers(networks_json, headers):
     configuration appended to the network information"""
     print("Retrieving syslog configuration for each network.")
     for customer in networks_json:
-        if 'networks' in customer:
+        if 'networks' in customer and isinstance(customer['networks'], dict):
             for network in customer['networks']:
                 syslog_url = Api_url \
                              + 'networks/' \
@@ -203,11 +200,13 @@ def get_syslog_servers(networks_json, headers):
     return networks_json
 
 
-def write_json_to_file(json_output):
+def write_json_to_file(json_output, file_output_dir, file_name):
     """Accepts json and writes the json input to a file.
     Prompts for output dir and name of file and creates it if necessary"""
-    file_output_dir = input("Where would you like to save the output? ")
-    file_name = input("What would you like to call the file? ")
+    if not file_output_dir:
+        file_output_dir = input("Save directory. Will be created if doesn't exits.: \n"),
+    if not file_name:
+        file_name = input("Name of file? \n")
     output = file_output_dir + '\\' + file_name + ".json"
     # Checks for existence of the output dir and creates if it does not exist
     if not os.path.isdir(file_output_dir):
@@ -218,15 +217,17 @@ def write_json_to_file(json_output):
 
 headers = auth_meraki_api()
 customers = get_meraki_customers(headers)
-
-
-# # Get syslog configs for all customers as json file
 networks = get_networks(customers, headers)
-# syslog = get_syslog_servers(networks, headers)
-# write_json_to_file(syslog)
-#
+
+# Get syslog configs for all customers as json file
+syslog = get_syslog_servers(networks, headers)
+# write_json_to_file(syslog, r'c:\temp', 'syslog_json')
+
+# Audit Umbrella DNS configuration
 rules = get_network_l3fwrules(networks, headers)
-write_json_to_file(rules)
+audit_umbrella = audit_umbrelladns(rules)
+write_json_to_file(audit_umbrella)
+
 # Get 2fa configuration for admins accounts at each customer
 # admins = get_customers_admins(customers, headers)
 # audit = parse_admins(admins)

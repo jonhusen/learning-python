@@ -15,47 +15,44 @@ def audit_umbrelladns(networks_fwrules):
     host1 = '208.67.222.222/32'
     host2 = '208.67.220.220/32'
     for customer in networks_fwrules:
+        customer_result = {
+            'organizationId': customer['organizationId'],
+            'organizationName': customer['organizationName']
+        }
         for network in customer['networks']:
             umbrella_allow, dns_deny = 'False', 'False'
             if 'l3FirewallRules' in network:
                 for rule in network['l3FirewallRules']:
                     destcidr = rule['destCidr'].split(",")
-                    if rule['policy'] is 'allow' \
-                            and rule['protocol'] is 'tcp' \
-                            and rule['destPort'] is '53' \
+                    if rule['policy'] == 'allow' \
+                            and rule['protocol'] == 'tcp' \
+                            and rule['destPort'] == '53' \
                             and (host1 in destcidr and host2 in destcidr):
                         umbrella_allow = 'True'
-                    if rule['policy'] is 'allow' \
-                            and rule['protocol'] is 'udp' \
-                            and rule['destPort'] is '53' \
+                    if rule['policy'] == 'allow' \
+                            and rule['protocol'] == 'udp' \
+                            and rule['destPort'] == '53' \
                             and (host1 in destcidr and host2 in destcidr):
                         umbrella_allow = 'True'
-                    if rule['policy'] is 'deny' \
-                            and rule['protocol'] is 'tcp' \
-                            and rule['destPort'] is '53' \
-                            and rule['destCidr'] is 'any':
+                    if rule['policy'] == 'deny' \
+                            and rule['protocol'] == 'tcp' \
+                            and rule['destPort'] == '53' \
+                            and rule['destCidr'] == 'Any':
                         dns_deny = 'True'
-                    if rule['policy'] is 'deny' \
-                            and rule['protocol'] is 'udp' \
-                            and rule['destPort'] is '53' \
-                            and rule['destCidr'] is 'any':
+                    if rule['policy'] == 'deny' \
+                            and rule['protocol'] == 'udp' \
+                            and rule['destPort'] == '53' \
+                            and rule['destCidr'] == 'Any':
                         dns_deny = 'True'
             if umbrella_allow is 'True' and dns_deny is 'True':
-                umbrelladns_audit.append({
-                    'name': network['name'],
-                    'organizationId': network['organizationId'],
-                    'umbrellaDns': 'True'
-                })
+                customer_result['umbrellaDns'] = 'True'
             else:
-                umbrelladns_audit.append({
-                    'name': network['name'],
-                    'organizationId': network['organizationId'],
-                    'umbrellaDns': 'False'
-                })
+                customer_result['umbrellaDns'] = 'False'
+        umbrelladns_audit.append(customer_result)
     return umbrelladns_audit
 
 
-with open('c:\\temp\\fw_rules_test.json', 'r') as rules_file:
-    rules = json.loads(rules_file)
+with open('c:\\temp\\fw_rules_test.json', 'r') as read_file:
+    rules = json.load(read_file)
 
 audit = audit_umbrelladns(rules)
