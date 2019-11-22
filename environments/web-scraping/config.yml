@@ -1,0 +1,11 @@
+sharepoint_url: https://corsicatechnologies.sharepoint.com
+wiki_base_url: /TST/TST%20Wiki/
+wiki_index: Home.aspx
+scrape_recursively: True
+content_div_id: ctl00_PlaceHolderMain_WikiField
+add_legacy_link: True
+appid: 764c0962-df55-4ab4-9f45-7113a0691c57
+tenantid: 81005ec0-f806-4e50-85a7-2610f867c292
+scope: ['Sites.Read.All', 'User.Read']
+authority: 'https://login.microsoftonline.com/common'
+endpoint: 'https://graph.microsoft.com/v1.0/sites'
