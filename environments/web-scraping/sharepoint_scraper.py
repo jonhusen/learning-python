@@ -75,7 +75,8 @@ def o365_auth(clientid, authority, scope):
     return token
 
 
-def scrape_pages(url):
+def scrape_wiki_pages(url):
+    
     browser.get(url=url)
     source = browser.page_source
     handled.append(url)
@@ -83,6 +84,13 @@ def scrape_pages(url):
     soup = BeautifulSoup(source, "html.parser")
     title = soup.find(name="span", id=content_h1_title)
     inner_div = soup.find(name="div", id=content_div_id)
+
+    # parse the index page
+    base_dir = os.path.dirname(wiki_base_url)
+    if not os.path.exists(base_dir):
+        os.makedirs(base_dir)
+
+
     if inner_div is not None:
         links = inner_div.find_all("a")
         for link in links:
@@ -94,9 +102,9 @@ def scrape_pages(url):
 
 with open("config.yml", 'r') as yml_read:
     config = yaml.load(yml_read, Loader=yaml.BaseLoader)
+
 url = config['sharepoint_url'] + config['wiki_base_url'] + config['wiki_index']
 # globals
-appid = config['appid']
 scrape_recursively = config['scrape_recursively']
 content_h1_title = config['content_h1_title']
 content_div_id = config['content_div_id']
