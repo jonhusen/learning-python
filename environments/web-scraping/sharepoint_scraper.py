@@ -11,8 +11,9 @@ TODO: Look into using html5lib instead of the built-in html.parser
 
 import os
 import sys
-import re
 import json
+import time
+from pathlib import Path
 
 import yaml
 import requests
@@ -22,23 +23,28 @@ from bs4 import BeautifulSoup
 from selenium import webdriver
 
 
-
 # Authenticate using O365 module
-# credentials = (appid, '')
+# credentials = (appid, "")
 # account = O365.Account(credentials)
-# if account.authenticate(scopes=['basic', 'sharepoint']):
-#    print('Authenticated!')
+# if account.authenticate(scopes=["basic", "sharepoint"]):
+#    print("Authenticated!")
 
 # sharepoint = account.sharepoint()
 # root_site = sharepoint.get_root_site()
 
 
 def o365_auth(clientid, authority, scope):
-    """Takes the client id of an app registration and the authentication
+    """
+    Takes the client id of an app registration and the authentication
     url as authority to initiate the device-flow authentication.
     User will need to enter the device code into the authorization site
     to complete authentication.
-    Returns the authentication token."""
+
+    :param clientid: AppID/ClientID of the Azure App Registration
+    :param authority: Login page used to authenticate
+    :param scope: Permissions requested
+    :return: Authentication token
+    """
     global headers
 
     app = msal.PublicClientApplication(client_id=clientid, authority=authority)
@@ -60,12 +66,12 @@ def o365_auth(clientid, authority, scope):
             raise ValueError(
                 "Fail to create device flow. Err: %s" % json.dumps(flow, indent=4)
             )
-        print(flow['message'])
+        print(flow["message"])
         sys.stdout.flush()
         token = app.acquire_token_by_device_flow(flow)
 
     if "access_token" in token:
-        headers = {'Authorization': "Bearer " + token['access_token']}
+        headers = {"Authorization": "Bearer " + token["access_token"]}
         graph_data = requests.get(url=endpoint, headers=headers).json()
         print("Graph API call result = %s" % json.dumps(graph_data, indent=2))
     else:
@@ -75,8 +81,8 @@ def o365_auth(clientid, authority, scope):
     return token
 
 
-def scrape_wiki_pages(url):
-    
+def crawl_wiki_pages(url):
+
     browser.get(url=url)
     source = browser.page_source
     handled.append(url)
@@ -84,42 +90,104 @@ def scrape_wiki_pages(url):
     soup = BeautifulSoup(source, "html.parser")
     title = soup.find(name="span", id=content_h1_title)
     inner_div = soup.find(name="div", id=content_div_id)
+    stripped_title = title.text.lstrip().rstrip()
 
-    # parse the index page
-    base_dir = os.path.dirname(wiki_base_url)
-    if not os.path.exists(base_dir):
-        os.makedirs(base_dir)
+    # Add folder for page and move into folder
+    current_dir = Path.cwd() / stripped_title
+    if not os.path.exists(current_dir):
+        os.makedirs(current_dir)
+    os.chdir(current_dir)
 
+    files_in_cwd = [f for f in glob.glob("*.*")]
+    if stripped_title in files_in_cwd
+    save_page(title, inner_div)
 
     if inner_div is not None:
         links = inner_div.find_all("a")
         for link in links:
             print(link)
-            if wiki_base_url in link['href']:
-                newoutput = link['href'].replace(wiki_base_url, "").replace("%20", "+").replace(".aspx", "")
+            if wiki_base_url in link["href"]:
+                newoutput = link["href"].replace(wiki_base_url, "").replace("%20", "+").replace(".aspx", "")
                 print(newoutput)
 
 
-with open("config.yml", 'r') as yml_read:
+def save_page(title, body):
+    """
+    Saves body of Sharepoint wiki pages and images to a folder.
+    Renames image links to relative links within the folder.
+
+    :param title: Title of the current page viewed in selenium
+    :param body: Main body of the content found on the page
+    :return: No return value
+    """
+    # Creates note and link to the original Sharepoint site
+    title.a.attrs["href"] = config["sharepoint_url"] + title.a.attrs["href"]
+    legacy_message = BeautifulSoup(
+        "<div><p>This page has been automatically exported from Sharepoint.</p>"
+        + "<p>If something doesn't look right you can go to the legacy link:"
+        + str(title) + "</p>"
+        + "<h1>" + title.text + "</h1>" + "</div>",
+        "html.parser"
+    )
+
+    # Saves images on the page to the cwd
+    images = body.find_all("img")
+    if images:
+        for img in images:
+            img_url = sharepoint_url + img["src"]
+            browser.execute_script("window.open('');")
+            browser.switch_to.window(browser.window_handles[1])
+            browser.get(img_url)
+            browser.get_screenshot_as_file(img["alt"])
+            time.sleep(3)
+            browser.close()
+            browser.switch_to.window(browser.window_handles[0])
+            img["src"] = img["alt"]
+
+    output = legacy_message.prettify() + "\n" + body.prettify()
+
+    page_name = title.text.rstrip().lstrip() + ".html"
+    with open(page_name, "w") as writer:
+        writer.write(output)
+
+
+def go_back():
+    """
+    Sends the browser back to the previous page.
+    Moves to the parent of the current working directory
+    :return: None
+    """
+    browser.back()
+    os.chdir(Path.cwd().parent)
+
+
+# Read YAML config options
+with open("config.yml", "r") as yml_read:
     config = yaml.load(yml_read, Loader=yaml.BaseLoader)
 
-url = config['sharepoint_url'] + config['wiki_base_url'] + config['wiki_index']
-# globals
-scrape_recursively = config['scrape_recursively']
-content_h1_title = config['content_h1_title']
-content_div_id = config['content_div_id']
-sharepoint_url = config['sharepoint_url']
-wiki_base_url = config['wiki_base_url']
-wiki_index = config['wiki_index']
-add_legacy_link = config['add_legacy_link']
-appid = config['appid']
-scope = config['scope']
-authority = config['authority']
-endpoint = config['endpoint']
+# Globals
+scrape_recursively = config["scrape_recursively"]
+content_h1_title = config["content_h1_title"]
+content_div_id = config["content_div_id"]
+sharepoint_url = config["sharepoint_url"]
+wiki_base_url = config["wiki_base_url"]
+wiki_index = config["wiki_index"]
+add_legacy_link = config["add_legacy_link"]
+appid = config["appid"]
+scope = config["scope"]
+authority = config["authority"]
+endpoint = config["endpoint"]
 handled = []
 empties = []
 has_images = []
 headers = None
+
+url = sharepoint_url + wiki_base_url + wiki_index
+base_dir = sharepoint_url.lstrip("https://") + wiki_base_url
+
+if not os.path.exists(base_dir):
+    os.makedirs(base_dir)
+os.chdir(Path.cwd() / base_dir)
 
 # Initialize browser and pause for interactive logon
 browser = webdriver.Chrome()
