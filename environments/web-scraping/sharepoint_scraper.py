@@ -13,6 +13,7 @@ import os
 import sys
 import json
 import time
+import glob
 from pathlib import Path
 
 import yaml
@@ -99,16 +100,19 @@ def crawl_wiki_pages(url):
     os.chdir(current_dir)
 
     files_in_cwd = [f for f in glob.glob("*.*")]
-    if stripped_title in files_in_cwd
-    save_page(title, inner_div)
+    if stripped_title not in files_in_cwd:
+        save_page(title, inner_div)
 
     if inner_div is not None:
         links = inner_div.find_all("a")
-        for link in links:
-            print(link)
-            if wiki_base_url in link["href"]:
-                newoutput = link["href"].replace(wiki_base_url, "").replace("%20", "+").replace(".aspx", "")
-                print(newoutput)
+        if links is None:
+            go_back()
+        else:
+            for link in links:
+                if wiki_base_url in link["href"]:
+                    fullpath = sharepoint_url + link["href"]
+                    if fullpath not in handled:
+                        crawl_wiki_pages(fullpath)
 
 
 def save_page(title, body):
@@ -116,8 +120,8 @@ def save_page(title, body):
     Saves body of Sharepoint wiki pages and images to a folder.
     Renames image links to relative links within the folder.
 
-    :param title: Title of the current page viewed in selenium
-    :param body: Main body of the content found on the page
+    :param title: HTML Title tag of the current page viewed in selenium
+    :param body: Main HTML body of the content found on the page
     :return: No return value
     """
     # Creates note and link to the original Sharepoint site
