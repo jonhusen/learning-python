@@ -11,6 +11,8 @@ html2text = "*"
 msal = "*"
 beautifulsoup4 = "*"
 selenium = "*"
+html5lib = "*"
+cchardet = "*"
 
 [requires]
 python_version = "3.8"

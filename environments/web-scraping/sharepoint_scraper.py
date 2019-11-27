@@ -19,7 +19,8 @@ from pathlib import Path
 import yaml
 import requests
 import msal
-import html2text
+import html5lib
+import cchardet as chardet
 from bs4 import BeautifulSoup
 from selenium import webdriver
 
@@ -88,7 +89,7 @@ def crawl_wiki_pages(url):
     source = browser.page_source
     handled.append(url)
 
-    soup = BeautifulSoup(source, "html.parser")
+    soup = BeautifulSoup(source, "html5lib")
     title = soup.find(name="span", id=content_h1_title)
     inner_div = soup.find(name="div", id=content_div_id)
     stripped_title = title.text.lstrip().rstrip()
@@ -109,62 +110,77 @@ def crawl_wiki_pages(url):
             go_back()
         else:
             for link in links:
-                fullpath = sharepoint_url + link["href"]
-                if wiki_base_url in link["href"] and link["href"].endswith(".aspx"):
+                if "href" in link.attrs.keys() \
+                        and wiki_base_url in link["href"] \
+                        and link["href"].endswith(".aspx"):
+                    fullpath = sharepoint_url + link["href"]
                     if fullpath not in handled:
-                        # Goes back to the parent working directory so next scrape has the correct starting directory
-                        os.chdir(Path.cwd().parent)
                         crawl_wiki_pages(fullpath)
-                elif wiki_site_assets_url in link["href"] and not link["href"].endswith(".aspx"):
-                    browser.execute_script("window.open('');")
-                    browser.switch_to.window(browser.window_handles[1])
-                    browser.get(fullpath)
-                    time.sleep(3)
-                    browser.close()
-                    browser.switch_to.window(browser.window_handles[0])
-                    handled.append(fullpath)
-                go_back()
+            go_back()
 
 
 def save_page(title, body):
     """
     Saves body of Sharepoint wiki pages and images to a folder.
     Renames image links to relative links within the folder.
-
     :param title: HTML Title tag of the current page viewed in selenium
     :param body: Main HTML body of the content found on the page
     :return: No return value
     """
     # Creates note and link to the original Sharepoint site
-    title.a.attrs["href"] = config["sharepoint_url"] + title.a.attrs["href"]
+    title.a.attrs["href"] = sharepoint_url + title.a.attrs["href"]
     legacy_message = BeautifulSoup(
         "<div><p>This page has been automatically exported from Sharepoint.</p>"
         + "<p>If something doesn't look right you can go to the legacy link:"
-        + str(title) + "</p>"
+        + str(title) + "</p><br>"
         + "<h1>" + title.text + "</h1>" + "</div>",
-        "html.parser"
+        "html5lib"
     )
 
     # Saves images on the page to the cwd
     images = body.find_all("img")
     if images:
         for img in images:
-            img_url = sharepoint_url + img["src"]
             img_name = img["src"].rsplit("/")[-1]
-            browser.execute_script("window.open('');")
-            browser.switch_to.window(browser.window_handles[1])
-            browser.get(img_url)
-            browser.get_screenshot_as_file(img_name)
-            time.sleep(3)
-            browser.close()
-            browser.switch_to.window(browser.window_handles[0])
+            if wiki_site_assets_url in img["src"]:
+                img_url = sharepoint_url + img["src"]
+                download_content(img_url, img_name)
             img["src"] = img_name
 
-    output = legacy_message.prettify() + "\n" + body.prettify()
+    body_links = body.find_all("a")
+    for link in body_links:
+        if "href" in link.attrs.keys() \
+                and wiki_site_assets_url in link["href"] \
+                and not link["href"].endswith(".aspx"):
+            file_url = sharepoint_url + link["href"]
+            file_name = link["href"].rsplit("/")[-1]
+            download_content(file_url, file_name)
+            link["href"] = file_name
+            handled.append(file_url)
 
+    output = legacy_message.prettify() + body.prettify()
+    page_soup = BeautifulSoup(output, "html5lib")
     page_name = title.text.rstrip().lstrip() + ".html"
-    with open(page_name, "w") as writer:
-        writer.write(output)
+    with open(page_name, "wb") as writer:
+        writer.write(page_soup.prettify(encoding="utf-8"))
+
+
+def download_content(item_url, item_name):
+    """
+    Creates a Requests session using cookies from the selenium browser instance.
+    Uses the requests session to get urls for item to download.
+    Downloads item to cwd
+    :param item_url: URL of item to be downloaded
+    :param item_name: Name of item to be created
+    :return: None
+    """
+    cookies = browser.get_cookies()
+    session = requests.Session()
+    for cookie in cookies:
+        session.cookies.set(cookie["name"], cookie["value"])
+    item_request = session.get(url=item_url)
+    with open(item_name, "wb") as item:
+        item.write(item_request.content)
 
 
 def go_back():
@@ -182,33 +198,35 @@ with open("config.yml", "r") as yml_read:
     config = yaml.load(yml_read, Loader=yaml.BaseLoader)
 
 # Globals
-scrape_recursively = config["scrape_recursively"]
+# scrape_recursively = config["scrape_recursively"]
 content_h1_title = config["content_h1_title"]
 content_div_id = config["content_div_id"]
 sharepoint_url = config["sharepoint_url"]
 wiki_base_url = config["wiki_base_url"]
 wiki_site_assets_url = config["wiki_site_assets_url"]
 wiki_index = config["wiki_index"]
-add_legacy_link = config["add_legacy_link"]
-appid = config["appid"]
-scope = config["scope"]
-authority = config["authority"]
-endpoint = config["endpoint"]
+# add_legacy_link = config["add_legacy_link"]
+# appid = config["appid"]
+# scope = config["scope"]
+# authority = config["authority"]
+# endpoint = config["endpoint"]
 handled = []
 empties = []
-has_images = []
-headers = None
 
 url = sharepoint_url + wiki_base_url + wiki_index
 base_dir = sharepoint_url.lstrip("https://") + wiki_base_url
-
-if not os.path.exists(base_dir):
-    os.makedirs(base_dir)
-os.chdir(Path.cwd() / base_dir)
 
 # Initialize browser and pause for interactive logon
 browser = webdriver.Chrome()
 browser.get(url)
 time.sleep(60)  # Wait for interactive login
 
+# Creates a local path to mirror the Sharepoint Wiki library path
+if not os.path.exists(base_dir):
+    os.makedirs(base_dir)
+os.chdir(Path.cwd() / base_dir)
+
 crawl_wiki_pages(url)
+
+
+# for testing
