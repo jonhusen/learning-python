@@ -93,14 +93,14 @@ def crawl_wiki_pages(url):
     inner_div = soup.find(name="div", id=content_div_id)
     stripped_title = title.text.lstrip().rstrip()
 
-    # Add folder for page and move into folder
+    # Add folder for page and move cwd into folder
     current_dir = Path.cwd() / stripped_title
     if not os.path.exists(current_dir):
         os.makedirs(current_dir)
     os.chdir(current_dir)
 
     files_in_cwd = [f for f in glob.glob("*.*")]
-    if stripped_title not in files_in_cwd:
+    if (stripped_title + ".html") not in files_in_cwd:
         save_page(title, inner_div)
 
     if inner_div is not None:
@@ -109,10 +109,21 @@ def crawl_wiki_pages(url):
             go_back()
         else:
             for link in links:
-                if wiki_base_url in link["href"]:
-                    fullpath = sharepoint_url + link["href"]
+                fullpath = sharepoint_url + link["href"]
+                if wiki_base_url in link["href"] and link["href"].endswith(".aspx"):
                     if fullpath not in handled:
+                        # Goes back to the parent working directory so next scrape has the correct starting directory
+                        os.chdir(Path.cwd().parent)
                         crawl_wiki_pages(fullpath)
+                elif wiki_site_assets_url in link["href"] and not link["href"].endswith(".aspx"):
+                    browser.execute_script("window.open('');")
+                    browser.switch_to.window(browser.window_handles[1])
+                    browser.get(fullpath)
+                    time.sleep(3)
+                    browser.close()
+                    browser.switch_to.window(browser.window_handles[0])
+                    handled.append(fullpath)
+                go_back()
 
 
 def save_page(title, body):
@@ -139,14 +150,15 @@ def save_page(title, body):
     if images:
         for img in images:
             img_url = sharepoint_url + img["src"]
+            img_name = img["src"].rsplit("/")[-1]
             browser.execute_script("window.open('');")
             browser.switch_to.window(browser.window_handles[1])
             browser.get(img_url)
-            browser.get_screenshot_as_file(img["alt"])
+            browser.get_screenshot_as_file(img_name)
             time.sleep(3)
             browser.close()
             browser.switch_to.window(browser.window_handles[0])
-            img["src"] = img["alt"]
+            img["src"] = img_name
 
     output = legacy_message.prettify() + "\n" + body.prettify()
 
@@ -175,6 +187,7 @@ content_h1_title = config["content_h1_title"]
 content_div_id = config["content_div_id"]
 sharepoint_url = config["sharepoint_url"]
 wiki_base_url = config["wiki_base_url"]
+wiki_site_assets_url = config["wiki_site_assets_url"]
 wiki_index = config["wiki_index"]
 add_legacy_link = config["add_legacy_link"]
 appid = config["appid"]
@@ -196,4 +209,6 @@ os.chdir(Path.cwd() / base_dir)
 # Initialize browser and pause for interactive logon
 browser = webdriver.Chrome()
 browser.get(url)
-browser.implicitly_wait(60)  # Wait for interactive login
+time.sleep(60)  # Wait for interactive login
+
+crawl_wiki_pages(url)

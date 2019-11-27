@@ -1,5 +1,6 @@
 sharepoint_url: https://corsicatechnologies.sharepoint.com
 wiki_base_url: /TST/TST%20Wiki/
+wiki_site_assets_url: /TST/SiteAssets/TST%20Wiki/
 wiki_index: Home.aspx
 scrape_recursively: True
 add_legacy_link: True
