@@ -86,6 +86,7 @@ def o365_auth(clientid, authority, scope):
 def crawl_wiki_pages(url):
 
     browser.get(url=url)
+    time.sleep(2)
     source = browser.page_source
     handled.append(url)
 
@@ -110,12 +111,20 @@ def crawl_wiki_pages(url):
             go_back()
         else:
             for link in links:
-                if "href" in link.attrs.keys() \
-                        and wiki_base_url in link["href"] \
-                        and link["href"].endswith(".aspx"):
-                    fullpath = sharepoint_url + link["href"]
-                    if fullpath not in handled:
-                        crawl_wiki_pages(fullpath)
+                if "href" in link.attrs.keys():
+                    if link["href"].startswith(wiki_base_url) \
+                            and link["href"].endswith(".aspx"):
+                        fullpath = sharepoint_url + link["href"]
+                        if fullpath not in handled:
+                            crawl_wiki_pages(fullpath)
+                    elif "portal.corsicatech.com" in link["href"]:
+                        # Handle legacy portal.corsicatech.com url which redirects to sharepoint
+                        fullpath = link["href"].replace(
+                            "http://portal.corsicatech.com",
+                            sharepoint_url
+                        )
+                        if fullpath not in handled:
+                            crawl_wiki_pages(fullpath)
             go_back()
 
 
@@ -141,11 +150,12 @@ def save_page(title, body):
     images = body.find_all("img")
     if images:
         for img in images:
-            img_name = img["src"].rsplit("/")[-1]
-            if wiki_site_assets_url in img["src"]:
+            if "src" in img.attrs.keys() \
+                    and wiki_site_assets_url in img["src"]:
+                img_name = img["src"].rsplit("/")[-1]
                 img_url = sharepoint_url + img["src"]
                 download_content(img_url, img_name)
-            img["src"] = img_name
+                img["src"] = img_name
 
     body_links = body.find_all("a")
     for link in body_links:
@@ -190,6 +200,7 @@ def go_back():
     :return: None
     """
     browser.back()
+    time.sleep(2)
     os.chdir(Path.cwd().parent)
 
 
@@ -214,7 +225,8 @@ handled = []
 empties = []
 
 url = sharepoint_url + wiki_base_url + wiki_index
-base_dir = sharepoint_url.lstrip("https://") + wiki_base_url
+local_root_dir = Path.cwd()
+wiki_base_dir = sharepoint_url.lstrip("https://") + wiki_base_url
 
 # Initialize browser and pause for interactive logon
 browser = webdriver.Chrome()
@@ -222,9 +234,9 @@ browser.get(url)
 time.sleep(60)  # Wait for interactive login
 
 # Creates a local path to mirror the Sharepoint Wiki library path
-if not os.path.exists(base_dir):
-    os.makedirs(base_dir)
-os.chdir(Path.cwd() / base_dir)
+if not os.path.exists(wiki_base_dir):
+    os.makedirs(wiki_base_dir)
+os.chdir(local_root_dir / wiki_base_dir)
 
 crawl_wiki_pages(url)
 
