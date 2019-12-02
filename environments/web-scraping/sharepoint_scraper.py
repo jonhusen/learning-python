@@ -160,13 +160,16 @@ def save_page(title, body):
     body_links = body.find_all("a")
     for link in body_links:
         if "href" in link.attrs.keys() \
-                and wiki_site_assets_url in link["href"] \
+                and link["href"].startswith(wiki_site_assets_url) \
                 and not link["href"].endswith(".aspx"):
             file_url = sharepoint_url + link["href"]
             file_name = link["href"].rsplit("/")[-1]
             download_content(file_url, file_name)
             link["href"] = file_name
             handled.append(file_url)
+        elif "href" in link.attrs.keys() \
+                and link["href"].startswith(wiki_base_url):
+            link["href"].replace(wiki_base_url, "./" + link["href"].text + "/")
 
     output = legacy_message.prettify() + body.prettify()
     page_soup = BeautifulSoup(output, "html5lib")
