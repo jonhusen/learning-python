@@ -6,6 +6,7 @@ Author: Jon Husen
 
 TODO: Look into using html5lib instead of the built-in html.parser
     https://www.crummy.com/software/BeautifulSoup/bs4/doc/#differences-between-parsers
+TODO: evaluate usefulness of "handled" url list
 
 """
 
@@ -88,7 +89,7 @@ def crawl_wiki_pages(url):
     browser.get(url=url)
     time.sleep(2)
     source = browser.page_source
-    handled.append(url)
+    #handled.append(url)
 
     soup = BeautifulSoup(source, "html5lib")
     title = soup.find(name="span", id=content_h1_title)
@@ -107,25 +108,32 @@ def crawl_wiki_pages(url):
 
     if inner_div is not None:
         links = inner_div.find_all("a")
-        if links is None:
-            go_back()
-        else:
-            for link in links:
-                if "href" in link.attrs.keys():
-                    if link["href"].startswith(wiki_base_url) \
-                            and link["href"].endswith(".aspx"):
-                        fullpath = sharepoint_url + link["href"]
-                        if fullpath not in handled:
-                            crawl_wiki_pages(fullpath)
-                    elif "portal.corsicatech.com" in link["href"]:
-                        # Handle legacy portal.corsicatech.com url which redirects to sharepoint
+
+    if links is None:
+        go_back()
+    else:
+        for link in links:
+            if "href" in link.attrs.keys():
+                if link["href"].startswith(wiki_base_url) \
+                        and link["href"].endswith(".aspx"):
+                    fullpath = sharepoint_url + link["href"]
+                    if fullpath not in handled:
+                        crawl_wiki_pages(fullpath)
+                elif "portal.corsicatech.com" in link["href"]:
+                    # Handle legacy portal.corsicatech.com url which redirects to sharepoint
+                    try:
                         fullpath = link["href"].replace(
                             "http://portal.corsicatech.com",
                             sharepoint_url
                         )
-                        if fullpath not in handled:
+                        brower.get(fullpath)
+                        if browser.title == "Page not found":
+                            browser.back()
+                        elif fullpath not in handled:
                             crawl_wiki_pages(fullpath)
-            go_back()
+                    except:
+                        pass
+        go_back()
 
 
 def save_page(title, body):
@@ -150,32 +158,54 @@ def save_page(title, body):
     images = body.find_all("img")
     if images:
         for img in images:
-            if "src" in img.attrs.keys() \
-                    and wiki_site_assets_url in img["src"]:
-                img_name = img["src"].rsplit("/")[-1]
-                img_url = sharepoint_url + img["src"]
-                download_content(img_url, img_name)
-                img["src"] = img_name
+            if "src" in img.attrs.keys():
+                if wiki_site_assets_url in img["src"]:  # or not img["src"].startswith("http"):
+                    img_name = img["src"].rsplit("/")[-1]
+                    img_url = sharepoint_url + img["src"]
+                    download_content(img_url, img_name)
+                    img["src"] = img_name
+                elif img["src"].startswith("http"):
+                    try:
+                        img_name = img["src"].rsplit("/")[-1]
+                        download_content(img["src"], img_name)
+                        img["src"] = img_name
+                    except:
+                        pass
 
     body_links = body.find_all("a")
-    for link in body_links:
-        if "href" in link.attrs.keys() \
-                and link["href"].startswith(wiki_site_assets_url) \
-                and not link["href"].endswith(".aspx"):
-            file_url = sharepoint_url + link["href"]
-            file_name = link["href"].rsplit("/")[-1]
-            download_content(file_url, file_name)
-            link["href"] = file_name
-            handled.append(file_url)
-        elif "href" in link.attrs.keys() \
-                and link["href"].startswith(wiki_base_url):
-            link["href"].replace(wiki_base_url, "./" + link["href"].text + "/")
+    if body_links:
+        for link in body_links:
+            if "href" in link.attrs.keys() \
+                    and link["href"].startswith(wiki_site_assets_url) \
+                    and not link["href"].endswith(".aspx"):
+                file_url = sharepoint_url + link["href"]
+                file_name = link["href"].rsplit("/")[-1]
+                download_content(file_url, file_name)
+                link["href"] = file_name
+                #handled.append(file_url)
 
     output = legacy_message.prettify() + body.prettify()
     page_soup = BeautifulSoup(output, "html5lib")
     page_name = title.text.rstrip().lstrip() + ".html"
     with open(page_name, "wb") as writer:
         writer.write(page_soup.prettify(encoding="utf-8"))
+
+    # Open html page to rewrite wiki links to local references
+    with open(page_name, "rb") as reader:
+        mod_source = reader.read()
+
+    mod_soup = BeautifulSoup(mod_source, "html5lib")
+    mod_body = mod_soup.find(name="div", id=content_div_id)
+    mod_links = mod_body.find_all("a")
+
+    for link in mod_links:
+        if "href" in link.attrs.keys() \
+                and link["href"].startswith(wiki_base_url):
+            link["href"] = "./" + link["href"].split("/")[-1].rstrip(".aspx") \
+                           + "/" + link["href"].split("/")[-1].replace(".aspx", ".html")
+
+    with open(page_name, "wb") as writer:
+        writer.write(mod_soup.prettify(encoding="utf-8"))
 
 
 def download_content(item_url, item_name):
