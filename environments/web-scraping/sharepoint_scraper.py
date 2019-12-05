@@ -7,6 +7,7 @@ Author: Jon Husen
 TODO: Look into using html5lib instead of the built-in html.parser
     https://www.crummy.com/software/BeautifulSoup/bs4/doc/#differences-between-parsers
 TODO: evaluate usefulness of "handled" url list
+TODO: fix browsing back from a "Page not found." Currently does not go back enough times
 
 """
 
@@ -86,8 +87,9 @@ def o365_auth(clientid, authority, scope):
 
 def crawl_wiki_pages(url):
 
-    browser.get(url=url)
-    time.sleep(2)
+    if browser.current_url != url:
+        browser.get(url=url)
+        time.sleep(1)
     source = browser.page_source
     #handled.append(url)
 
@@ -113,26 +115,52 @@ def crawl_wiki_pages(url):
         go_back()
     else:
         for link in links:
-            if "href" in link.attrs.keys():
-                if link["href"].startswith(wiki_base_url) \
-                        and link["href"].endswith(".aspx"):
-                    fullpath = sharepoint_url + link["href"]
-                    if fullpath not in handled:
-                        crawl_wiki_pages(fullpath)
-                elif "portal.corsicatech.com" in link["href"]:
-                    # Handle legacy portal.corsicatech.com url which redirects to sharepoint
-                    try:
-                        fullpath = link["href"].replace(
-                            "http://portal.corsicatech.com",
-                            sharepoint_url
-                        )
-                        brower.get(fullpath)
-                        if browser.title == "Page not found":
+            if "href" not in link.attrs.keys():
+                continue
+
+            if wiki_base_url in link["href"] \
+                    and browser.current_url[browser.current_url.find(wiki_base_url):] in \
+                    link["href"][link["href"].find(wiki_base_url):]:
+                continue
+
+            if "class" in link.attrs.keys():
+                if "ms-missinglink" in link["class"]:
+                    continue
+
+            if link["href"].startswith(wiki_base_url) \
+                    and link["href"].endswith(".aspx"):
+                fullpath = sharepoint_url + link["href"]
+                browser.get(fullpath)
+                time.sleep(1)
+                if browser.title == "Page not found":
+                    while browser.title == "Page not found" or \
+                            browser.title == "Error":
+                        browser.back()
+                elif fullpath not in handled:
+                    crawl_wiki_pages(fullpath)
+                else:
+                    browser.back()
+            elif redirect_url in link["href"]:
+                # Handle legacy url which redirects to sharepoint
+                try:
+                    fullpath = link["href"].replace(
+                        redirect_url,
+                        sharepoint_url
+                    )
+                    browser.get(fullpath)
+                    time.sleep(1)
+                    if browser.title == "Page not found":
+                        while browser.title == "Page not found" or \
+                                browser.title == "Error":
                             browser.back()
-                        elif fullpath not in handled:
-                            crawl_wiki_pages(fullpath)
-                    except:
-                        pass
+                    elif fullpath not in handled:
+                        crawl_wiki_pages(fullpath)
+                    else:
+                        browser.back()
+                except:
+                    while browser.title == "Page not found" or \
+                            browser.title == "Error":
+                        browser.back()
         go_back()
 
 
@@ -233,7 +261,7 @@ def go_back():
     :return: None
     """
     browser.back()
-    time.sleep(2)
+    time.sleep(1)
     os.chdir(Path.cwd().parent)
 
 
@@ -248,16 +276,17 @@ content_div_id = config["content_div_id"]
 sharepoint_url = config["sharepoint_url"]
 wiki_base_url = config["wiki_base_url"]
 wiki_site_assets_url = config["wiki_site_assets_url"]
-wiki_index = config["wiki_index"]
+wiki_home = config["wiki_home"]
+redirect_url = config["redirect_url"]
 # add_legacy_link = config["add_legacy_link"]
 # appid = config["appid"]
 # scope = config["scope"]
 # authority = config["authority"]
 # endpoint = config["endpoint"]
-handled = []
+handled = ["https://corsicatechnologies.sharepoint.com/TST/TST%20Wiki/Home.aspx"]
 empties = []
 
-url = sharepoint_url + wiki_base_url + wiki_index
+url = sharepoint_url + wiki_base_url + wiki_home
 local_root_dir = Path.cwd()
 wiki_base_dir = sharepoint_url.lstrip("https://") + wiki_base_url
 
