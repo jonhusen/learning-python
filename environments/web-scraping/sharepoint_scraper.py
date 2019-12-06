@@ -6,7 +6,7 @@ Author: Jon Husen
 
 TODO: Look into using html5lib instead of the built-in html.parser
     https://www.crummy.com/software/BeautifulSoup/bs4/doc/#differences-between-parsers
-TODO: evaluate usefulness of "handled" url list
+TODO: evaluate usefulness of "exclusions" url list
 TODO: fix browsing back from a "Page not found." Currently does not go back enough times
 
 """
@@ -20,78 +20,24 @@ from pathlib import Path
 
 import yaml
 import requests
-import msal
 import html5lib
-import cchardet as chardet
 from bs4 import BeautifulSoup
 from selenium import webdriver
 
 
-# Authenticate using O365 module
-# credentials = (appid, "")
-# account = O365.Account(credentials)
-# if account.authenticate(scopes=["basic", "sharepoint"]):
-#    print("Authenticated!")
-
-# sharepoint = account.sharepoint()
-# root_site = sharepoint.get_root_site()
-
-
-def o365_auth(clientid, authority, scope):
-    """
-    Takes the client id of an app registration and the authentication
-    url as authority to initiate the device-flow authentication.
-    User will need to enter the device code into the authorization site
-    to complete authentication.
-
-    :param clientid: AppID/ClientID of the Azure App Registration
-    :param authority: Login page used to authenticate
-    :param scope: Permissions requested
-    :return: Authentication token
-    """
-    global headers
-
-    app = msal.PublicClientApplication(client_id=clientid, authority=authority)
-    token = None
-    headers = None
-    accounts = app.get_accounts()
-
-    if accounts:
-        for a in accounts:
-            print(a["username"])
-            if input("Select this account? y/n") == "y":
-                chosen = a
-                break
-        token = app.acquire_token_silent(scope, account=chosen)
-
-    if not token:
-        flow = app.initiate_device_flow(scopes=scope)
-        if "user_code" not in flow:
-            raise ValueError(
-                "Fail to create device flow. Err: %s" % json.dumps(flow, indent=4)
-            )
-        print(flow["message"])
-        sys.stdout.flush()
-        token = app.acquire_token_by_device_flow(flow)
-
-    if "access_token" in token:
-        headers = {"Authorization": "Bearer " + token["access_token"]}
-        graph_data = requests.get(url=endpoint, headers=headers).json()
-        print("Graph API call result = %s" % json.dumps(graph_data, indent=2))
-    else:
-        print(token.get("error"))
-        print(token.get("error_description"))
-        print(token.get("correlation_id"))
-    return token
-
-
 def crawl_wiki_pages(url):
+    """Crawls the pages of a Sharepoint wiki site and creates a tree
 
+    Each page gets a folder for storing the html body of the wiki
+    page and other site assets found on the page. Folders for valid
+    links found on the page are created and child pages are crawled.
+    :param url: URL of the top level page to be crawled
+    :return: None
+    """
     if browser.current_url != url:
         browser.get(url=url)
         time.sleep(1)
     source = browser.page_source
-    #handled.append(url)
 
     soup = BeautifulSoup(source, "html5lib")
     title = soup.find(name="span", id=content_h1_title)
@@ -115,18 +61,28 @@ def crawl_wiki_pages(url):
         go_back()
     else:
         for link in links:
+            parent_url = browser.current_url
+
+            # Handle malformed link tags
             if "href" not in link.attrs.keys():
                 continue
 
+            # Handle case where page links to itself
             if wiki_base_url in link["href"] \
                     and browser.current_url[browser.current_url.find(wiki_base_url):] in \
                     link["href"][link["href"].find(wiki_base_url):]:
                 continue
 
+            # Handle links to parent page
+            if link["href"] in parent_url:
+                continue
+
+            # Handle links dynamically classified as missing
             if "class" in link.attrs.keys():
                 if "ms-missinglink" in link["class"]:
                     continue
 
+            # Takes relative Sharepoint links and rewrites them as full links
             if link["href"].startswith(wiki_base_url) \
                     and link["href"].endswith(".aspx"):
                 fullpath = sharepoint_url + link["href"]
@@ -136,12 +92,12 @@ def crawl_wiki_pages(url):
                     while browser.title == "Page not found" or \
                             browser.title == "Error":
                         browser.back()
-                elif fullpath not in handled:
+                elif fullpath not in exclusions:
                     crawl_wiki_pages(fullpath)
                 else:
                     browser.back()
             elif redirect_url in link["href"]:
-                # Handle legacy url which redirects to sharepoint
+                # Handle legacy url which redirects to Sharepoint
                 try:
                     fullpath = link["href"].replace(
                         redirect_url,
@@ -153,10 +109,8 @@ def crawl_wiki_pages(url):
                         while browser.title == "Page not found" or \
                                 browser.title == "Error":
                             browser.back()
-                    elif fullpath not in handled:
+                    elif fullpath not in exclusions:
                         crawl_wiki_pages(fullpath)
-                    else:
-                        browser.back()
                 except:
                     while browser.title == "Page not found" or \
                             browser.title == "Error":
@@ -165,9 +119,11 @@ def crawl_wiki_pages(url):
 
 
 def save_page(title, body):
-    """
-    Saves body of Sharepoint wiki pages and images to a folder.
-    Renames image links to relative links within the folder.
+    """Saves body of Sharepoint wiki pages, images, and other items to a folder.
+
+    Adds a note to the top of the page with a link to the original Sharepoint
+    site. Downloads images on the page to the cwd. Downloads page assets
+    from links on the page. Rewrites all links as relative links.
     :param title: HTML Title tag of the current page viewed in selenium
     :param body: Main HTML body of the content found on the page
     :return: No return value
@@ -200,6 +156,7 @@ def save_page(title, body):
                     except:
                         pass
 
+    # Saves items in non-page links to cwd
     body_links = body.find_all("a")
     if body_links:
         for link in body_links:
@@ -210,7 +167,6 @@ def save_page(title, body):
                 file_name = link["href"].rsplit("/")[-1]
                 download_content(file_url, file_name)
                 link["href"] = file_name
-                #handled.append(file_url)
 
     output = legacy_message.prettify() + body.prettify()
     page_soup = BeautifulSoup(output, "html5lib")
@@ -218,7 +174,8 @@ def save_page(title, body):
     with open(page_name, "wb") as writer:
         writer.write(page_soup.prettify(encoding="utf-8"))
 
-    # Open html page to rewrite wiki links to local references
+    # Open html page to rewrite wiki links to relative references
+    # This allows the original list of links for the page to still be crawlable
     with open(page_name, "rb") as reader:
         mod_source = reader.read()
 
@@ -237,10 +194,11 @@ def save_page(title, body):
 
 
 def download_content(item_url, item_name):
-    """
+    """Downloads content of a crawled page.
+
     Creates a Requests session using cookies from the selenium browser instance.
     Uses the requests session to get urls for item to download.
-    Downloads item to cwd
+    Downloads item to cwd.
     :param item_url: URL of item to be downloaded
     :param item_name: Name of item to be created
     :return: None
@@ -255,8 +213,10 @@ def download_content(item_url, item_name):
 
 
 def go_back():
-    """
+    """Takes the environment back one level.
+
     Sends the browser back to the previous page.
+    Adds a delay to allow the page to render in case of delay in processing.
     Moves to the parent of the current working directory
     :return: None
     """
@@ -270,7 +230,6 @@ with open("config.yml", "r") as yml_read:
     config = yaml.load(yml_read, Loader=yaml.BaseLoader)
 
 # Globals
-# scrape_recursively = config["scrape_recursively"]
 content_h1_title = config["content_h1_title"]
 content_div_id = config["content_div_id"]
 sharepoint_url = config["sharepoint_url"]
@@ -278,13 +237,11 @@ wiki_base_url = config["wiki_base_url"]
 wiki_site_assets_url = config["wiki_site_assets_url"]
 wiki_home = config["wiki_home"]
 redirect_url = config["redirect_url"]
-# add_legacy_link = config["add_legacy_link"]
-# appid = config["appid"]
-# scope = config["scope"]
-# authority = config["authority"]
-# endpoint = config["endpoint"]
-handled = ["https://corsicatechnologies.sharepoint.com/TST/TST%20Wiki/Home.aspx"]
-empties = []
+exclusions = ["https://corsicatechnologies.sharepoint.com/TST/TST%20Wiki/Home.aspx",
+              "https://corsicatechnologies.sharepoint.com/SitePages/Welcome.aspx",
+              "https://corsicatechnologies.sharepoint.com/"
+              "http://portal.corsicatech.com/",
+              "http://portal.corsicatech.com/tst"]
 
 url = sharepoint_url + wiki_base_url + wiki_home
 local_root_dir = Path.cwd()
