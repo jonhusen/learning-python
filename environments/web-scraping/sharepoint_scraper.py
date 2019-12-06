@@ -50,9 +50,16 @@ def crawl_wiki_pages(url):
         os.makedirs(current_dir)
     os.chdir(current_dir)
 
-    files_in_cwd = [f for f in glob.glob("*.*")]
+    files_in_cwd = [file for file in glob.glob("*.*")]
     if (stripped_title + ".html") not in files_in_cwd:
         save_page(title, inner_div)
+
+    url_tracker.append(browser.current_url)
+    handled.append({
+        "page_name": stripped_title,
+        "path": Path.cwd(),
+        "url": url
+        })
 
     if inner_div is not None:
         links = inner_div.find_all("a")
@@ -61,10 +68,12 @@ def crawl_wiki_pages(url):
         go_back()
     else:
         for link in links:
-            parent_url = browser.current_url
-
             # Handle malformed link tags
             if "href" not in link.attrs.keys():
+                continue
+
+            # Handle links to Sharepoint/portal homepage
+            if link["href"] in exclusions:
                 continue
 
             # Handle case where page links to itself
@@ -73,9 +82,12 @@ def crawl_wiki_pages(url):
                     link["href"][link["href"].find(wiki_base_url):]:
                 continue
 
-            # Handle links to parent page
-            if link["href"] in parent_url:
-                continue
+            # Handle duplicate links
+            if any(item for item in handled if link["href"] in item["url"]):
+                log_message = "DUPLICATE: " + link.title + " located at " + item["path"]
+                write_log(log_message)
+            # if any(item for item in url_tracker if link["href"] in item):
+            #     continue
 
             # Handle links dynamically classified as missing
             if "class" in link.attrs.keys():
@@ -95,6 +107,7 @@ def crawl_wiki_pages(url):
                 elif fullpath not in exclusions:
                     crawl_wiki_pages(fullpath)
                 else:
+                    write_log("EXCEPTION: " + fullpath)
                     browser.back()
             elif redirect_url in link["href"]:
                 # Handle legacy url which redirects to Sharepoint
@@ -112,8 +125,10 @@ def crawl_wiki_pages(url):
                     elif fullpath not in exclusions:
                         crawl_wiki_pages(fullpath)
                     else:
+                        write_log("EXCEPTION: " + fullpath)
                         browser.back()
                 except:
+                    write_log("EXCEPTION: " + fullpath)
                     while browser.title == "Page not found" or \
                             browser.title == "Error":
                         browser.back()
@@ -225,7 +240,13 @@ def go_back():
     browser.back()
     time.sleep(1)
     os.chdir(Path.cwd().parent)
+    url_tracker.pop()
 
+
+def write_log(output):
+    log_file = Path.joinpath(local_root_dir / wiki_base_dir / "crawl_log.log")
+    with open(log_file, "a") as log:
+        log.writelines(output)
 
 # Read YAML config options
 with open("config.yml", "r") as yml_read:
@@ -239,13 +260,16 @@ wiki_base_url = config["wiki_base_url"]
 wiki_site_assets_url = config["wiki_site_assets_url"]
 wiki_home = config["wiki_home"]
 redirect_url = config["redirect_url"]
+url_tracker = []
+handled = []
 exclusions = ["https://corsicatechnologies.sharepoint.com/TST/TST%20Wiki/Home.aspx",
               "https://corsicatechnologies.sharepoint.com/SitePages/Welcome.aspx",
-              "https://corsicatechnologies.sharepoint.com/"
+              "https://corsicatechnologies.sharepoint.com/",
               "http://portal.corsicatech.com/",
               "http://portal.corsicatech.com/tst"]
 
-url = sharepoint_url + wiki_base_url + wiki_home
+# url = sharepoint_url + wiki_base_url + wiki_home
+url = "https://corsicatechnologies.sharepoint.com/TST/TST%20Wiki/The%20Inn%20at%20Chesapeake%20Bay%20Beach%20Club.aspx"
 local_root_dir = Path.cwd()
 wiki_base_dir = sharepoint_url.lstrip("https://") + wiki_base_url
 
@@ -260,6 +284,7 @@ if not os.path.exists(wiki_base_dir):
 os.chdir(local_root_dir / wiki_base_dir)
 
 crawl_wiki_pages(url)
+
 
 
 # for testing
