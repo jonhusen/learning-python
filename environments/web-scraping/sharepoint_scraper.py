@@ -111,6 +111,8 @@ def crawl_wiki_pages(url):
                             browser.back()
                     elif fullpath not in exclusions:
                         crawl_wiki_pages(fullpath)
+                    else:
+                        browser.back()
                 except:
                     while browser.title == "Page not found" or \
                             browser.title == "Error":
