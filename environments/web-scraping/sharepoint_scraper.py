@@ -57,7 +57,7 @@ def crawl_wiki_pages(url):
     url_tracker.append(browser.current_url)
     handled.append({
         "page_name": stripped_title,
-        "path": Path.cwd(),
+        "path": Path.cwd() / (stripped_title + ".html"),
         "url": url
         })
 
@@ -68,7 +68,7 @@ def crawl_wiki_pages(url):
         go_back()
     else:
         for link in links:
-            # Handle malformed link tags
+            # Skip malformed link tags
             if "href" not in link.attrs.keys():
                 continue
 
@@ -82,20 +82,22 @@ def crawl_wiki_pages(url):
                     link["href"][link["href"].find(wiki_base_url):]:
                 continue
 
-            # Handle duplicate links
-            if any(item for item in handled if link["href"] in item["url"]):
-                log_message = "DUPLICATE: " + link.title + " located at " + item["path"]
-                write_log(log_message)
-            # if any(item for item in url_tracker if link["href"] in item):
-            #     continue
-
             # Handle links dynamically classified as missing
             if "class" in link.attrs.keys():
                 if "ms-missinglink" in link["class"]:
                     continue
 
+            # Handle duplicate links
+            if any(item for item in handled if link["href"] in item["url"]):
+                item = [item for item in handled if link["href"] in item["url"]][0]
+                duplicate_page(item)
+                log_message = "DUPLICATE: " + item["page_name"] + " now located at " + str(item["path"])
+                write_log(log_message)
+            # if any(item for item in url_tracker if link["href"] in item):
+            #     continue
+
             # Takes relative Sharepoint links and rewrites them as full links
-            if link["href"].startswith(wiki_base_url) \
+            elif link["href"].startswith(wiki_base_url) \
                     and link["href"].endswith(".aspx"):
                 fullpath = sharepoint_url + link["href"]
                 browser.get(fullpath)
@@ -109,7 +111,8 @@ def crawl_wiki_pages(url):
                 else:
                     write_log("EXCEPTION: " + fullpath)
                     browser.back()
-            elif redirect_url in link["href"]:
+            # elif redirect_url in link["href"]:
+            elif link["href"].startswith(redirect_url):
                 # Handle legacy url which redirects to Sharepoint
                 try:
                     fullpath = link["href"].replace(
@@ -203,11 +206,40 @@ def save_page(title, body):
     for link in mod_links:
         if "href" in link.attrs.keys() \
                 and link["href"].startswith(wiki_base_url):
-            link["href"] = "./" + link["href"].split("/")[-1].rstrip(".aspx") \
+            link["href"] = "./" + link["href"].split("/")[-1].replace(".aspx", "") \
                            + "/" + link["href"].split("/")[-1].replace(".aspx", ".html")
 
     with open(page_name, "wb") as writer:
         writer.write(mod_soup.prettify(encoding="utf-8"))
+
+    page_count++
+
+
+def duplicate_page(duplicate):
+    os_root = str(Path.cwd())[:str(Path.cwd()).find(sharepoint_url.lstrip("https://"))]
+    dup_relative_path = str(duplicate["path"])[str(duplicate["path"]).find(sharepoint_url.lstrip("https://")):]
+    local_url = os_root + dup_relative_path
+    duplicate_message = BeautifulSoup(
+        "<div><p>This page is a duplicate.</p>"
+        + "<p>The page: \"" + duplicate["page_name"] + "\" is now located at:<br>"
+        + "<a href=\"" + local_url + "\">" + local_url + "</a></p><br>"
+        + "<p>If something doesn't look right you can go to the legacy link:"
+        + "<a href=\"" + duplicate["url"] + "\">" + duplicate["url"] + "</a></p></div>",
+        "html5lib"
+    )
+
+    page_soup = BeautifulSoup(duplicate_message.prettify(), "html5lib")
+    page_name = duplicate["page_name"] + ".html"
+
+    current_dir = Path.cwd() / duplicate["page_name"]
+    if not os.path.exists(current_dir):
+        os.makedirs(current_dir)
+    os.chdir(current_dir)
+
+    with open(page_name, "wb") as writer:
+        writer.write(page_soup.prettify(encoding="utf-8"))
+
+    os.chdir(Path.cwd().parent)
 
 
 def download_content(item_url, item_name):
@@ -246,7 +278,7 @@ def go_back():
 def write_log(output):
     log_file = Path.joinpath(local_root_dir / wiki_base_dir / "crawl_log.log")
     with open(log_file, "a") as log:
-        log.writelines(output)
+        log.writelines(output + "\n")
 
 # Read YAML config options
 with open("config.yml", "r") as yml_read:
@@ -267,6 +299,7 @@ exclusions = ["https://corsicatechnologies.sharepoint.com/TST/TST%20Wiki/Home.as
               "https://corsicatechnologies.sharepoint.com/",
               "http://portal.corsicatech.com/",
               "http://portal.corsicatech.com/tst"]
+page_count = 0
 
 # url = sharepoint_url + wiki_base_url + wiki_home
 url = "https://corsicatechnologies.sharepoint.com/TST/TST%20Wiki/The%20Inn%20at%20Chesapeake%20Bay%20Beach%20Club.aspx"
@@ -285,6 +318,6 @@ os.chdir(local_root_dir / wiki_base_dir)
 
 crawl_wiki_pages(url)
 
-
+write_log("Page Count: " + page_count + "\n")
 
 # for testing
