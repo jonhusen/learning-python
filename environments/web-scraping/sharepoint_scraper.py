@@ -212,7 +212,7 @@ def save_page(title, body):
     with open(page_name, "wb") as writer:
         writer.write(mod_soup.prettify(encoding="utf-8"))
 
-    page_count++
+    page_count += 1
 
 
 def duplicate_page(duplicate):
@@ -301,8 +301,8 @@ exclusions = ["https://corsicatechnologies.sharepoint.com/TST/TST%20Wiki/Home.as
               "http://portal.corsicatech.com/tst"]
 page_count = 0
 
-# url = sharepoint_url + wiki_base_url + wiki_home
-url = "https://corsicatechnologies.sharepoint.com/TST/TST%20Wiki/The%20Inn%20at%20Chesapeake%20Bay%20Beach%20Club.aspx"
+url = sharepoint_url + wiki_base_url + wiki_home
+# url = "https://corsicatechnologies.sharepoint.com/TST/TST%20Wiki/The%20Inn%20at%20Chesapeake%20Bay%20Beach%20Club.aspx"
 local_root_dir = Path.cwd()
 wiki_base_dir = sharepoint_url.lstrip("https://") + wiki_base_url
 
