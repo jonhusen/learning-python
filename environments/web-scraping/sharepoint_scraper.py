@@ -37,9 +37,19 @@ def crawl_wiki_pages(url):
     if browser.current_url != url:
         browser.get(url=url)
         time.sleep(1)
-    source = browser.page_source
 
+    source = browser.page_source
     soup = BeautifulSoup(source, "html5lib")
+
+    # Handle server timeout
+    while soup.find(id="s4-simple-content") or soup.find(id="sw_content"):
+        log_message = "ERROR: " + url + " Page returned: " + soup.text + " Retrying"
+        write_log(log_message)
+        time.sleep(5)
+        browser.get(url)
+        source = browser.page_source
+        soup = BeautifulSoup(source, "html5lib")
+
     title = soup.find(name="span", id=content_h1_title)
     inner_div = soup.find(name="div", id=content_div_id)
     stripped_title = title.text.lstrip().rstrip()
@@ -91,7 +101,7 @@ def crawl_wiki_pages(url):
             if any(item for item in handled if link["href"] in item["url"]):
                 item = [item for item in handled if link["href"] in item["url"]][0]
                 duplicate_page(item)
-                log_message = "DUPLICATE: " + item["page_name"] + " now located at " + str(item["path"])
+                log_message = "DUPLICATE: Duplicate link found. " + item["page_name"] + " now located at " + str(item["path"])
                 write_log(log_message)
             # if any(item for item in url_tracker if link["href"] in item):
             #     continue
@@ -148,6 +158,8 @@ def save_page(title, body):
     :param body: Main HTML body of the content found on the page
     :return: No return value
     """
+    global page_count
+
     # Creates note and link to the original Sharepoint site
     title.a.attrs["href"] = sharepoint_url + title.a.attrs["href"]
     legacy_message = BeautifulSoup(
@@ -222,7 +234,7 @@ def duplicate_page(duplicate):
     duplicate_message = BeautifulSoup(
         "<div><p>This page is a duplicate.</p>"
         + "<p>The page: \"" + duplicate["page_name"] + "\" is now located at:<br>"
-        + "<a href=\"" + local_url + "\">" + local_url + "</a></p><br>"
+        + "<a href=\"" + local_url.replace("%20", "%2520") + "\">" + local_url + "</a></p><br>"
         + "<p>If something doesn't look right you can go to the legacy link:"
         + "<a href=\"" + duplicate["url"] + "\">" + duplicate["url"] + "</a></p></div>",
         "html5lib"
@@ -280,6 +292,7 @@ def write_log(output):
     with open(log_file, "a") as log:
         log.writelines(output + "\n")
 
+
 # Read YAML config options
 with open("config.yml", "r") as yml_read:
     config = yaml.load(yml_read, Loader=yaml.BaseLoader)
@@ -318,6 +331,6 @@ os.chdir(local_root_dir / wiki_base_dir)
 
 crawl_wiki_pages(url)
 
-write_log("Page Count: " + page_count + "\n")
+write_log("Page Count: " + str(page_count) + "\n")
 
 # for testing
