@@ -12,3 +12,7 @@ def fetch_words():
 
     for word in story_words:
         print(word)
+
+
+if __name__ == "__main__":
+    fetch_words()
