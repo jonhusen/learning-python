@@ -1,4 +1,5 @@
 import sys
+from math import log
 
 DIGIT_MAP = {
     "zero": "0",
@@ -23,4 +24,9 @@ def convert(s):
         return int(number)
     except (KeyError, TypeError) as e:
         print(f"Conversion error: {e!r}", file=sys.stderr)
-        return -1
+        raise
+
+
+def string_log(s):
+    v = convert(s)
+    return log(v)
