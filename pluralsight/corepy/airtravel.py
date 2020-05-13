@@ -2,7 +2,9 @@
 
 
 class Flight:
-    def __init__(self, number):
+    """A flight with a particular passenger aircraft."""
+
+    def __init__(self, number, aircraft):
         if not number[:2].isalpha():
             raise ValueError(f"No airline code in '{number}'")
 
@@ -12,13 +14,37 @@ class Flight:
         if not (number[2:].isdigit() and int(number[2:]) <= 9999):
             raise ValueError(f"Invalid route number '{number}'")
 
-        self._number = number
         # Underscore avoids name clash with method of same name
         # convention - implementation details not intended for
         # consumption or manipulation prefixed by "_"
+        self._number = number
+        self._aircraft = aircraft
+
+    def aircraft_model(self):
+        # Method which returns aircraft model by delegating to
+        # Aircraft on behalf of the client instead of allowing
+        # client to interrogate Aircraft directly
+        return self._aircraft.model()
 
     def number(self):
         return self._number
 
     def airline(self):
         return self._number[:2]
+
+
+class Aircraft:
+    def __init__(self, registration, model, num_rows, num_seats_per_row):
+        self._registration = registration
+        self._model = model
+        self._num_rows = num_rows
+        self._num_seats_per_row = num_seats_per_row
+
+    def registration(self):
+        return self._registration
+
+    def model(self):
+        return self._model
+
+    def seating_plan(self):
+        return (range(1, self._num_rows + 1), "ABCDEFGHJK"[: self._num_seats_per_row])
