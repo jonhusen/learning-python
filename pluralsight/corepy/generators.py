@@ -18,6 +18,7 @@ def distinct(iterable):
 
 def run_pipeline():
     items = [3, 6, 6, 2, 1, 1]
+    # List constructor used to eval generated items to simplify control flow
     for item in take(3, list(distinct(items))):
         print(item)
 
