@@ -18,7 +18,7 @@ def distinct(iterable):
 
 def run_pipeline():
     items = [3, 6, 6, 2, 1, 1]
-    for item in take(3, distinct(items)):
+    for item in take(3, list(distinct(items))):
         print(item)
 
 
