@@ -2,4 +2,5 @@
 
 
 class Flight:
-    pass
+    def number(self):
+        return "SN060"
