@@ -18,6 +18,7 @@ class PhoneBookTest(unittest.TestCase):
             self.phonebook.lookup("missing")
 
     def test_empty_phonebook_is_consistent(self):
+        # Example of bad test design
         self.phonebook.add("Bob", "12345")
         self.assertTrue(self.phonebook.is_consistent())
         self.phonebook.add("Anna", "012345")
