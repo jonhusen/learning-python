@@ -1,6 +1,6 @@
 import unittest
 
-from phonebook import PhoneBook
+from .phonebook import PhoneBook
 
 
 class PhoneBookTest(unittest.TestCase):
